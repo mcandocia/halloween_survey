@@ -126,14 +126,14 @@ better_text_size <- theme(axis.text=element_text(size=rel(2)),
                           legend.title=element_text(size=rel(2)),
                           legend.text=element_text(size=rel(2)))
 
-better_text_size_manylabs <- theme(axis.text=element_text(size=rel(1.1)),
+better_text_size_manylabs <- theme(axis.text=element_text(size=rel(1.3)),
                                    axis.title=element_text(size=rel(1.5)),
                                    plot.title=element_text(size=rel(1.5)),
                                    plot.subtitle=element_text(size=rel(1.3)),
                                    legend.title=element_text(size=rel(1.5)),
                                    legend.text=element_text(size=rel(1.1)))
 
-better_text_size_tiled <- theme(axis.text=element_text(size=rel(1)),
+better_text_size_tiled <- theme(axis.text=element_text(size=rel(1.15)),
                                 axis.title=element_text(size=rel(1.5)),
                                 plot.title=element_text(size=rel(1.5)),
                                 plot.subtitle=element_text(size=rel(1.3)),

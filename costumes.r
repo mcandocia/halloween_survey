@@ -110,16 +110,18 @@ ggplot(costumes_anyage_summary) + geom_bar(aes(x=costume_type, y=weighted_averag
   geom_errorbar(aes(x=costume_type, ymin=weighted_average-1.96*weighted_sigma, ymax=weighted_average+1.96*weighted_sigma), color='red')
 
 # divided by age of costume
-ggplot(costumes_subdivided_summary %>% filter(costume_time != 'One of these ranges, but I forget')) + 
-  geom_bar(aes(x=costume_type, y=weighted_average, fill=barcolor), stat='identity') +
-  scale_fill_identity() +
-  coord_flip() + 
-  scale_y_continuous(label=percent) +
-  xlab('Costume Type') + ylab('Percent of US population who has worn costume') + 
-  ggtitle('Most common costume types historically worn by Americans, grouped by age costume worn', 
-          subtitle='Red error bars indicate 95% confidence intervals\nSource:maxcandocia.com 2018 Halloween survey') + 
-  geom_errorbar(aes(x=costume_type, ymin=weighted_average-1.96*weighted_sigma, ymax=weighted_average+1.96*weighted_sigma), color='red') + 
-  facet_wrap(~costume_time)
+costumes_subdivided_summary = costumes %>%
+  group_by(costume_type, costume_time) %>%
+  summarize(
+    average = mean(costume_value),
+    weighted_average=mean(costume_value*weight),
+    average_sigma = weighted.var.sigma(costume_value, rep(1, n())),
+    weighted_sigma=weighted.var.sigma(costume_value, weight)
+  ) %>%
+  ungroup() %>%
+  mutate(weighted_average=ifelse(costume_time=='As an adult', weighted_average/adult_proportion(),weighted_average),
+         weighted_sigma=ifelse(costume_time=='As an adult', weighted_sigma/adult_proportion(),weighted_sigma)
+  )
 
 # divided by gender
 ggplot(costumes_gender_summary) + 

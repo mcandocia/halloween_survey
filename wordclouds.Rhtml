@@ -1,0 +1,145 @@
+<!--begin.rcode wordclouds.setup, message=FALSE, echo=FALSE, warning=FALSE
+
+source('cleaning.r')
+source('utility_functions.r')
+
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(reshape2)
+library(scales)
+library(cetcolor)
+library(tm)
+library(wordcloud)
+#source('plotting_functions.r')
+
+halloween = read.csv('halloween.csv') 
+
+#functions to transform words
+map_words <- function(text){
+  text %>% 
+    VectorSource %>%
+    Corpus %>%
+    tm_map(tolower) %>%
+    tm_map(removeWords, stopwords('english') )
+}
+
+
+comp.wordcloud <- function(data, scale=c(10,1), ...){
+  wordcloud(data %>% map_words, colors=c(cet_pal(10, 'fire')[1:8], '#F00101'),
+            scale=scale, random.order=FALSE, ...)
+}
+
+ntitle <- function(text, cex=1.5, n_newline=4){
+  title(paste0(paste(rep('\n', n_newline), collapse=''), text), cex.main=cex)
+}
+
+# just use regex to aggregate the good ones...
+worst_candies = halloween %>% 
+  mutate(wc=gsub('â€™','\'', tolower(worst_candy))) %>%
+  summarize(
+  `candy corn`=sum(grepl('corn', wc)),
+  `licorice`=sum(grepl('licor|liqu', wc)),
+  `Almond Joy`=sum(grepl('almondjoy|almond joy', wc)),
+  `Snickers`=sum(grepl('snicker\'?s', wc)),
+  `Dots`=sum(grepl('dots', wc)),
+  `Milk Duds`=sum(grepl('milk duds|milkduds', wc)),
+  `taffy`=sum(grepl('taffy', wc)),
+  `Tootsie Rolls`=sum(grepl('tootsie', wc)),
+  `jelly beans`=sum(grepl('jelly beans', wc)),
+  `Smarties`=sum(grepl('smarties',wc)),
+  `Twizzlers`=sum(grepl('twizzler', wc))
+)
+
+favorite_candies = halloween %>% 
+  mutate(fc=gsub('â€™','\'', tolower(favorite_candy))) %>%
+  summarize(
+    `Reese's`=sum(grepl('reese|reece',fc)),
+    `Twix`=sum(grepl('twix',fc)),
+    `Chocolate`=sum(grepl('^chocolates?$|^anythin.{1,5}chocolate', fc)),
+    `Kit-Kat bars`=sum(grepl('kit', fc)),
+    `Snickers`=sum(grepl('snickers', fc)),
+    `Butterfingers`=sum(grepl('butterfinger', fc)),
+    `100 Grand`=sum(grepl('100.*grand',fc)),
+    `Smarties`=sum(grepl('smarties', fc)),
+    `Skittles`=sum(grepl('skittles', fc)),
+    `M&Ms`=sum(grepl('m&m|(^| )m and m', fc)),
+    `3 Musketeers`=sum(grepl('musket',fc)),
+    `Hershey's chocolate`=sum(grepl('hersh?ey', fc)),
+    `Milky Way`=sum(grepl('milky way', fc)),
+    `Nerds`=sum(grepl('nerds', fc))
+    
+  )
+
+n_responses = nrow(halloween %>% filter(favorite_candy != ''))
+
+transpose_cat_frame <- function(data, trans=identity){
+  data %>% melt() %>%
+    mutate(variable=factor(as.character(variable), levels = levels(variable)[order(value)])) %>%
+    mutate(barcolor=trans(c('#222222','#EE5501'))[1 + (variable %in% levels(variable)[c(T,F)])]) %>%
+    mutate(value=value/n_responses, label=percent(value))
+  
+}
+
+
+
+end.rcode-->
+
+<p>As part of a Halloween-themed survey I administered on Facebook, Reddit, LinkedIn, and email, individuals were asked to come up with three words to describe Halloween, as well as their favorite and least favorite candies. The following are word clouds related to these questions:</p>
+
+<h2 id="halloween_three_words"> Prompt: Describe Halloween in three words </h2>
+
+<!--begin.rcode halloween-threewords-wordcloud, fig.width=10, fig.height=10, warning=FALSE, message=FALSE, echo=FALSE
+#to fit in HTML properly
+scaling_factor=1.35
+
+comp.wordcloud(halloween$three_words, scale=c(8,1.1)*scaling_factor)
+ntitle('How People Describe Halloween')
+end.rcode-->
+
+<h2 id="favorite_candy">Question: What is your favorite candy?</h2>
+<!--begin.rcode halloween-favorite-candy, fig.width=10, fig.height=10, warning=FALSE, message=FALSE, echo=FALSE
+
+comp.wordcloud( gsub('â€™|\'','', halloween$favorite_candy), scale=c(5,1)*scaling_factor)
+ntitle('Favorite Halloween candies')
+end.rcode-->
+
+<h2 id="worst_candy"> Question: What is your least favorite candy?</h2>
+<!--begin.rcode halloween-worst-candy, fig.width=10, fig.height=10, warning=FALSE, message=FALSE, echo=FALSE
+
+comp.wordcloud(gsub('â€™|\'','',halloween$worst_candy), scale=c(4.3,1)*scaling_factor)
+ntitle('Least-favorite candies')
+end.rcode-->
+
+<h2 id="candy_barplots">Bar Plots of Candy Preferences</h2>
+
+<p> Because some of the candy terms are compound words, it might help to see what the actual percentages are of responses for candy preferences. It looks like Reese's (peanut butter cups, mostly) are the most popular single candy, although chocolates all have the top 8 positions. Maybe keep these in mind when preparing for the 31st	&#x1f609;.</p>
+
+
+
+
+<!--begin.rcode halloween-candies-barplot, fig.width=9, fig.height=12, warning=FALSE, message=FALSE, echo=FALSE
+
+ggplot(favorite_candies %>% transpose_cat_frame()) + 
+  geom_bar(aes(x=variable, y=value, fill=barcolor), stat='identity') +
+  coord_flip() + scale_fill_identity() + 
+  scale_y_continuous(label=percent) + 
+  ylab('Percent responses as favorite candy') + 
+  xlab('Candy Type or Brand') + 
+  ggtitle('Favorite candies among responses to Halloween survey', 
+          subtitle='Source: maxcandocia.com/link/halloween-words') +
+  theme_bw() + geom_text(aes(x=variable, y=value, label=label), color='#888888', hjust='inward', size=8) + 
+  better_text_size_manylabs
+
+
+ggplot(worst_candies %>% transpose_cat_frame(trans=rev)) + 
+  geom_bar(aes(x=variable, y=value, fill=barcolor), stat='identity') +
+  coord_flip() + scale_fill_identity() + 
+  scale_y_continuous(label=percent) + 
+  ylab('Percent responses as least-favorite candy') + 
+  xlab('Candy Type or Brand') + 
+  ggtitle('Least-favorite candies among responses to Halloween survey', 
+          subtitle='Source: maxcandocia.com/link/halloween-words') +
+  theme_bw() + geom_text(aes(x=variable, y=value, label=label), color='#888888', hjust='inward', size=8) +
+  better_text_size_manylabs
+end.rcode-->

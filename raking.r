@@ -49,7 +49,7 @@ rake_data <- function(data, variables, true_or_estimated_margins,
     #print(reordered_margins)
     true_or_estimated_margins[[variable]]=reordered_margins
   }
-  print(true_or_estimated_margins)
+  #print(true_or_estimated_margins)
   # create design matrices (columns of 1s and 0s in this case) for faster calculations
   design_matrices = list()
   for (variable in variables){

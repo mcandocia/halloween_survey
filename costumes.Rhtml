@@ -1,0 +1,242 @@
+<!--begin.rcode costumes.setup, message=FALSE, echo=FALSE, warning=FALSE
+# I will be doing all the calculations up front here and ONLY graphics afterwards
+sink('start.txt')
+source('cleaning.r')
+source('utility_functions.r')
+library(scales)
+library(ape)
+library(gridExtra)
+library(cetcolor)
+
+# some spell fixes
+costume_factor_remapping = list(
+  'A pun based costume'='A pun-based costume',
+  'Musician Actor Artist'='Musician/Actor/Artist',
+  'Prince Princess'='Prince/Princess',
+  'Mermaid merman'='Mermaid/Merman',
+  'Witch not from movie TV show'='Witch not from movie/TV show',
+  'Wizard not from movie TV show or Washington Wizards'='Wizard not from movie/TV show'
+)
+
+costumes_from = names(costume_factor_remapping)
+costumes_to = unlist(costume_factor_remapping)
+
+# costumes is a very tall data frame with info on costumes each person used
+costumes = read.csv('costumes.csv')
+# halloween is the default data frame with cleaned column names and survey weights
+halloween = read.csv('halloween.csv') 
+
+costumes$costume_type = costumes$costume_type %>% mapvalues(from=costumes_from, to=costumes_to)
+
+adult_proportion <- function(){x=sum(halloween$age_group=='Under 18'); return(1-x/nrow(halloween))}
+
+costumes_anyage = costumes %>%
+  group_by(costume_type, id) %>%
+  summarize(
+    costume_value=max(costume_value)
+  ) %>% ungroup() %>% 
+  left_join(halloween[, !grepl('costume_.*',names(halloween))], by='id')
+
+
+costumes_summary = costumes %>%
+  group_by(costume) %>%
+  summarize(
+    average = mean(costume_value),
+    weighted_average=mean(costume_value*weight),
+    average_sigma = weighted.var.sigma(costume_value, rep(1, n())),
+    weighted_sigma=weighted.var.sigma(costume_value, weight)
+  ) %>%
+  ungroup()
+
+costumes_subdivided_summary = costumes %>%
+  group_by(costume_type, costume_time) %>%
+  summarize(
+    average = mean(costume_value),
+    weighted_average=mean(costume_value*weight),
+    average_sigma = weighted.var.sigma(costume_value, rep(1, n())),
+    weighted_sigma=weighted.var.sigma(costume_value, weight)
+  ) %>%
+  ungroup() %>%
+  mutate(weighted_average=ifelse(costume_time=='As an adult', weighted_average/adult_proportion(),weighted_average),
+         weighted_sigma=ifelse(costume_time=='As an adult', weighted_sigma/adult_proportion(),weighted_sigma)
+  )
+
+costumes_gender_summary = costumes %>% filter(gender != "Other") %>%
+  group_by(gender, costume_type) %>%
+  summarize(
+    average = mean(costume_value),
+    weighted_average=mean(costume_value*weight),
+    average_sigma = weighted.var.sigma(costume_value, rep(1, n())),
+    weighted_sigma=weighted.var.sigma(costume_value, weight)
+  ) %>%
+  ungroup()
+
+costumes_anyage_summary = costumes_anyage %>%
+  group_by(costume_type) %>%
+  summarize(
+    average = mean(costume_value),
+    weighted_average=mean(costume_value*weight),
+    average_sigma = weighted.var.sigma(costume_value, rep(1, n())),
+    weighted_sigma=weighted.var.sigma(costume_value, weight)    
+  ) %>% ungroup()
+
+taller_costumes_anyage = rbind(
+  costumes_anyage_summary %>% transmute(costume=costume_type, average=average, sigma=average_sigma, weight='unweighted'),
+  costumes_anyage_summary %>% transmute(costume=costume_type, average=weighted_average, sigma=weighted_sigma, weight='weighted')
+)
+
+# order by weighted average, then send other categories to the back
+costumes_level_ordered = costumes_anyage_summary$costume_type[order(costumes_anyage_summary$weighted_average)] %>% as.character()
+end_levels = c('Something else not listed')
+costumes_level_ordered=c(end_levels, costumes_level_ordered[!costumes_level_ordered %in% end_levels])
+costumes_anyage_summary$costume_type = factor(as.character(costumes_anyage_summary$costume_type), levels=costumes_level_ordered)
+
+costumes_anyage_summary$barcolor = ifelse(costumes_anyage_summary$costume_type %in% costumes_level_ordered[c(T,F)], '#222222','#EE5501')
+
+
+costumes_subdivided_summary$costume_type = factor(as.character(costumes_subdivided_summary$costume_type), levels=costumes_level_ordered)
+costumes_subdivided_summary$barcolor = ifelse(costumes_subdivided_summary$costume_type %in% costumes_level_ordered[c(T,F)], '#222222','#EE5501')
+
+costumes_gender_summary$costume_type = factor(as.character(costumes_gender_summary$costume_type), levels=costumes_level_ordered)
+costumes_gender_summary$barcolor = ifelse(costumes_gender_summary$costume_type %in% costumes_level_ordered[c(T,F)], '#222222','#EE5501')
+
+
+gender_props = costumes_gender_summary %>% 
+  group_by(costume_type) %>%
+  summarize(gender_diff = sum(weighted_average[gender=='Male']/(weighted_average[gender=='Female']+0.0000001))) %>%
+  ungroup() 
+
+costume_prevalence_order = as.character(gender_props$costume_type)[order(gender_props$gender_diff)]
+
+costumes_gender_summary2 = costumes_gender_summary %>% mutate(
+  costume_type = factor(as.character(costume_type), levels=costume_prevalence_order)
+)
+
+
+general_costume_stats = calculate_group_stats(
+  costumes_anyage, 
+  'costume_type',
+  'costume_value',
+  group_variables='id'
+)
+
+costume_distance_matrix = calculate_distance_matrix(
+  general_costume_stats,
+  costume_type ~ id,
+  value.var='prop',
+  jaccard_similarity
+)
+
+costume_clusters = hclust(costume_distance_matrix, method='ward.D2')
+
+costume_cluster_labels = cutree(costume_clusters, 3)
+sink()
+
+end.rcode-->
+
+<h2> Overview </h2>
+
+<p> This October I sent out <a href="https://maxcandocia.com/link/halloween-survey-ex" id="halloween2018_survey_example_out" target="_blank">a survey<a> via Facebook, Reddit, LinkedIn, and email, asking respondents about how they celebrated Halloween, including what costumes they wore, what ages they went trick-or-treating, among other questions.</p>
+
+<p> Total, I received 286 responses among a relatively diverse American audience. Respondents were offered a $13 and $6.66 Amazon gift card as random prizes as incentives. The data (with certain info expunged) will be made available by the end of the month.</p>
+
+<h2 id="costume_popular"> Which costumes have been the most popular? </h2>
+
+<p> Below are some of the most popular Halloween costumes, sorted by how many people have worn that costume for Halloween. Characters from movies and TV shows are at the top along with ghosts, with vampires, devils, and clowns coming close behind. The red lines on each bar indicate the margin of error for each estimate.</p>
+
+<p> Looking at the categories, I may have skewed the data by not excluding "character from a movie" or "character from a TV show" with most of these. For example, I am pretty sure there have been many people who dressed up as Harry Potter for Halloween, despite the "Wizard" category being relatively rare, while characters from the Twilight saga could fall under "Vampire" <i>and</i> "character from a movie". </p>
+
+<!--begin.rcode costumes-general, fig.width=10, fig.height=12.4, warning=FALSE, message=FALSE, echo=FALSE
+ggplot(costumes_anyage_summary) + geom_bar(aes(x=costume_type, y=weighted_average, fill=barcolor), stat='identity') +
+  scale_fill_identity() +
+  coord_flip() + 
+  scale_y_continuous(label=percent) +
+  xlab('Costume Type') + ylab('Percent of US population who has worn costume') + 
+  ggtitle('Most common costume types historically worn by Americans', 
+          subtitle='Red error bars indicate 95% confidence intervals\nSource:maxcandocia.com/link/halloween2018-costumes') + 
+  geom_errorbar(aes(x=costume_type, ymin=weighted_average-1.96*weighted_sigma, ymax=weighted_average+1.96*weighted_sigma), color='red') + 
+  better_text_size_manylabs
+end.rcode-->
+
+<h3> By age worn </h3>
+
+<p> I also subdivided the data by the age at which certain costumes were worn. Most costumes, if represented well, are commonly worn by younger children, and quite often by teenagers. Adults seem to be a bit pickier, wearing fewer costumes overall, and sticking to a smaller number. Devils appear to be the most common specific costume type among adults.</p>
+
+<!--begin.rcode costumes-byage, fig.width=10, fig.height=12.4, warning=FALSE, message=FALSE, echo=FALSE
+ggplot(costumes_subdivided_summary %>% filter(costume_time != 'One of these ranges, but I forget') %>%
+         mutate(costume_time=factor(as.character(costume_time), levels=rev(levels(costume_time))))) + 
+  geom_bar(aes(x=costume_type, y=weighted_average, fill=barcolor), stat='identity') +
+  scale_fill_identity() +
+  coord_flip() + 
+  scale_y_continuous(label=percent) +
+  xlab('Costume Type') + ylab('Percent of US population who has worn costume') + 
+  ggtitle('Most common costume types historically worn by Americans, grouped by age costume worn', 
+          subtitle='Red error bars indicate 95% confidence intervals\nSource:maxcandocia.com/link/halloween2018-costumes') + 
+  geom_errorbar(aes(x=costume_type, ymin=weighted_average-1.96*weighted_sigma, ymax=weighted_average+1.96*weighted_sigma), color='red') + 
+  facet_wrap(~costume_time) +
+  better_text_size_manylabs
+end.rcode-->
+
+<h2 id="gender">By Gender</h2>
+<p> Certain costumes are more popular with different genders. Below are the estimated percentages and the relative proportions of costumes worn by males and females. For the most part, spookier costumes seem to be more common among males, but vampires and zombies seem to be more common among women. On average, each female response had 1.27 unique costume types, and each male had 2.12 costume types. The three general categories, "characters from a movie", "characters from a tv show", and "something else not listed" probably explain this apparent lack of variety, although it seems most likely that there is less variety among females.</p>
+
+<!--begin.rcode costumes-gender-1, fig.width=10, fig.height=12.4, warning=FALSE, message=FALSE, echo=FALSE
+ggplot(costumes_gender_summary) + 
+  geom_bar(aes(x=costume_type, y=weighted_average, fill=barcolor), stat='identity') +
+  scale_fill_identity() +
+  coord_flip() + 
+  scale_y_continuous(label=percent) +
+  xlab('Costume Type') + ylab('Percent of US population who has worn costume') + 
+  ggtitle('Most common costume types historically worn by Americans ,grouped by gender', 
+          subtitle='Red error bars indicate 95% confidence intervals\nSource:maxcandocia.com/link/halloween2018-costumes') + 
+  geom_errorbar(aes(x=costume_type, ymin=weighted_average-1.96*weighted_sigma, ymax=weighted_average+1.96*weighted_sigma), color='red') + 
+  facet_wrap(~gender) + better_text_size_manylabs
+end.rcode-->
+
+
+<!--begin.rcode costumes-gender-2, fig.width=10, fig.height=12.4, warning=FALSE, message=FALSE, echo=FALSE
+ggplot(costumes_gender_summary2) + 
+  geom_bar(aes(x=costume_type, y=weighted_average, fill=gender), position='fill', stat='identity') + 
+  coord_flip() + scale_fill_manual(values=c('Male'='#EE5501','Female'='#222222')) + 
+  scale_y_continuous(label=percent) + ylab('Proportion of Costumes') + xlab('Costume Type') +
+  ggtitle('Relative proportions of Halloween costumes worn by gender',
+          subtitle='Source: maxcandocia.com/link/halloween2018-costumes') + better_text_size_manylabs
+end.rcode-->
+
+<h2 id="clustering"> Clustering Costumes</h2>
+
+<p>By looking at which costumes are commonly worn by the same individual, they can be clustered into different branches, similar to animals in the animal kingdom. For example, the costumes closest to ghost are clown and pumpkin. Zombies and vampires are close to each other, as are supervillain/superhero, and witches and cats. If someone went as one of these costumes for Halloween, it is more likely that they also went as a costume closer to that in the below dendrogram. </p>
+
+<p> To understand the graph better, look at the distance of the prongs of the forks joining two costumes together. The shorter they are, the closer the costumes are. When groups of costumes are joined together, then that means that the groups as a whole are somewhat close. The further left you go, the less similar the groups are. </p>
+
+
+
+<!--begin.rcode costumes-clustering-1, fig.width=11, fig.height=11, warning=FALSE, message=FALSE, echo=FALSE
+plot(as.phylo(costume_clusters), main='Halloween costumes clustered by who has worn them',
+     tip.color =c('#222222','#EE5501','#BB2244')[costume_cluster_labels]
+)
+end.rcode-->
+
+<p> <b>(Warning: technical explanation)</b> The similarity metric used for the above clustering is the <a href="https://en.wikipedia.org/wiki/Jaccard_index" id="wiki_jaccard_out" target="_blank">Jaccard Index</a>, which looks at how many individuals each pair of costumes shares in common, and divides that by the total number of individuals that have worn at least one of those costumes. Because clustering simplifies relationships, it can help to see the similarity matrix plotted as a tile map. Because of the sparsity of data (most people selected 3 or 4 categories at most), the correlations are somewhat low for most of the categories. Cat/witch, fairy/[prince/princess], and characters from TV/movies are the only ones with particularly high corelations.</p>
+
+<!--begin.rcode costumes-clustering-2, fig.width=11, fig.height=11, warning=FALSE, message=FALSE, echo=FALSE
+ggplot(melt(as.matrix(1-as.matrix(costume_distance_matrix))) %>% 
+         refactor_by_cluster(costume_clusters)) + 
+  geom_tile(aes(x=Var1, y=Var2, fill=value)) + 
+  scale_fill_gradientn('similarity\n', colors=cet_pal(9, 'fire'),
+                       limits = 0:1) + 
+  xlab('') + ylab('') + 
+  ggtitle('Similarity of Halloween Costumes by Usage Among Individuals') + 
+  theme(axis.text.x = element_text(angle=90, hjust=1)) + better_text_size_tiled
+end.rcode-->
+
+
+<h2> Afterthoughts </h2>
+
+<p> In hindsight, I should have allowed for more unique costume types, as well as custom user input. Too many were put into a general category. The general statistics, however, are still interesting. </p>
+
+<p> Happy Halloween, everyone!</p>
+
+<h2> GitHub Source </h2>
+
+<p> The code used for this project is hosted at <a href="https://github.com/mcandocia/halloween_survey" target="_blank" id="git_halloween_survey_out">https://github.com/mcandocia/halloween_survey</a>.</p>
